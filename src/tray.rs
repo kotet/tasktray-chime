@@ -259,18 +259,28 @@ impl SystemTray {
     pub fn open_config_file() -> Result<()> {
         let config_path = Path::new("config.yaml");
         
+        // 絶対パスに変換
+        let absolute_path = config_path.canonicalize()
+            .or_else(|_| {
+                // canonicalize が失敗した場合（まだ存在しないファイル等）、手動で絶対パス化
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(config_path))
+                    .context("Failed to get current directory")
+            })?;
+        
         #[cfg(target_os = "windows")]
         {
-            std::process::Command::new("cmd")
-                .args(&["/C", "start", "notepad", &config_path.to_string_lossy()])
+            // Windows: notepad を直接実行
+            std::process::Command::new("notepad.exe")
+                .arg(&absolute_path)
                 .spawn()
-                .context("Failed to open config file")?;
+                .context("Failed to open config file with notepad.exe")?;
         }
         
         #[cfg(target_os = "linux")]
         {
             std::process::Command::new("xdg-open")
-                .arg(config_path)
+                .arg(&absolute_path)
                 .spawn()
                 .context("Failed to open config file")?;
         }
@@ -278,12 +288,12 @@ impl SystemTray {
         #[cfg(target_os = "macos")]
         {
             std::process::Command::new("open")
-                .arg(config_path)
+                .arg(&absolute_path)
                 .spawn()
                 .context("Failed to open config file")?;
         }
 
-        tracing::info!("Opened config file: {:?}", config_path);
+        tracing::info!("Opened config file: {:?}", absolute_path);
         Ok(())
     }
 
@@ -297,18 +307,28 @@ impl SystemTray {
                 .context("Failed to create logs directory")?;
         }
         
+        // 絶対パスに変換
+        let absolute_path = logs_path.canonicalize()
+            .or_else(|_| {
+                // canonicalize が失敗した場合（まだ存在しないパス等）、手動で絶対パス化
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(logs_path))
+                    .context("Failed to get current directory")
+            })?;
+        
         #[cfg(target_os = "windows")]
         {
-            std::process::Command::new("cmd")
-                .args(&["/C", "start", "explorer", &logs_path.to_string_lossy()])
+            // Windows: explorer.exe を直接実行
+            std::process::Command::new("explorer.exe")
+                .arg(&absolute_path)
                 .spawn()
-                .context("Failed to open logs directory")?;
+                .context("Failed to open logs directory with explorer.exe")?;
         }
         
         #[cfg(target_os = "linux")]
         {
             std::process::Command::new("xdg-open")
-                .arg(logs_path)
+                .arg(&absolute_path)
                 .spawn()
                 .context("Failed to open logs directory")?;
         }
@@ -316,12 +336,12 @@ impl SystemTray {
         #[cfg(target_os = "macos")]
         {
             std::process::Command::new("open")
-                .arg(logs_path)
+                .arg(&absolute_path)
                 .spawn()
                 .context("Failed to open logs directory")?;
         }
 
-        tracing::info!("Opened logs directory: {:?}", logs_path);
+        tracing::info!("Opened logs directory: {:?}", absolute_path);
         Ok(())
     }
 }
