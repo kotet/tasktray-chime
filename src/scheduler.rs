@@ -20,6 +20,7 @@ pub struct CronScheduler {
     audio_player: Arc<AudioPlayer>,
     event_sender: Option<mpsc::UnboundedSender<ScheduleEvent>>,
     shutdown_sender: Option<tokio::sync::oneshot::Sender<()>>,
+    start_time: DateTime<Local>,
 }
 
 impl CronScheduler {
@@ -29,6 +30,7 @@ impl CronScheduler {
             audio_player,
             event_sender: None,
             shutdown_sender: None,
+            start_time: Local::now(),
         }
     }
 
@@ -53,6 +55,7 @@ impl CronScheduler {
 
         let schedules = self.schedules.clone();
         let audio_player = self.audio_player.clone();
+        let start_time = self.start_time;
 
         tokio::spawn(async move {
             tracing::info!("Cron scheduler started with {} schedules", schedules.len());
@@ -63,7 +66,7 @@ impl CronScheduler {
                         tracing::info!("Cron scheduler shutdown requested");
                         break;
                     }
-                    _ = Self::run_scheduler_cycle(&schedules, &audio_player, &event_tx) => {
+                    _ = Self::run_scheduler_cycle(&schedules, &audio_player, &event_tx, start_time) => {
                         // スケジューラーサイクル完了後、短い間隔で再チェック
                         tokio::time::sleep(Duration::from_millis(100)).await;
                     }
@@ -89,8 +92,17 @@ impl CronScheduler {
         schedules: &HashMap<String, Schedule>,
         audio_player: &Arc<AudioPlayer>,
         event_tx: &mpsc::UnboundedSender<ScheduleEvent>,
+        start_time: DateTime<Local>,
     ) {
         let now = Local::now();
+        
+        // 起動から10秒以内は実行をスキップ（意図しない起動時実行を防ぐ）
+        let startup_duration = now.signed_duration_since(start_time);
+        if startup_duration.num_seconds() < 10 {
+            tracing::debug!("Skipping scheduler execution within {} seconds of startup", startup_duration.num_seconds());
+            return;
+        }
+        
         let mut next_run_time: Option<DateTime<Local>> = None;
         let mut schedules_to_execute = Vec::new();
 

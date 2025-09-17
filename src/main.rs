@@ -5,7 +5,6 @@ mod logging;
 mod audio;
 mod scheduler;
 mod tray;
-mod test_audio;
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -73,17 +72,6 @@ async fn main() -> Result<()> {
 
     info!("Starting Tasktray Chime application");
 
-    // テスト用音声ファイルを生成（存在しない場合）
-    let test_sound_path = "./sounds/tick.wav";
-    if !std::path::Path::new(test_sound_path).exists() {
-        info!("Generating test audio file: {}", test_sound_path);
-        if let Err(e) = test_audio::generate_test_audio(test_sound_path) {
-            warn!("Failed to generate test audio: {}", e);
-        } else {
-            info!("Test audio file generated successfully");
-        }
-    }
-
     // 音声プレイヤーを初期化
     let audio_player = Arc::new(
         AudioPlayer::new(&config.audio)
@@ -98,25 +86,6 @@ async fn main() -> Result<()> {
                 error!("Failed to preload sound file '{}': {}", schedule.file, e);
             }
         }
-    }
-
-    // 音声システムのテスト（最初の音声ファイルで）
-    if !config.schedules.is_empty() {
-        let test_file = &config.schedules[0].file;
-        info!("Testing audio system with file: {}", test_file);
-        
-        match audio_player.play_sound(test_file).await {
-            Ok(()) => {
-                info!("Audio system test successful");
-            }
-            Err(e) => {
-                error!("Audio system test failed: {}", e);
-                // 続行するが、警告として扱う
-            }
-        }
-        
-        // 少し待機してから次の処理へ
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
     }
 
     // cronスケジューラーを初期化
