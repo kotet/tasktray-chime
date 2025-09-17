@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use tokio::sync::mpsc;
 use tray_icon::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem, MenuId},
     TrayIcon, TrayIconBuilder,
 };
 use tray_icon::menu::MenuEvent;
@@ -10,6 +10,11 @@ use std::path::Path;
 pub struct SystemTray {
     tray_icon: TrayIcon,
     menu_event_receiver: mpsc::UnboundedReceiver<TrayMenuEvent>,
+    // 固定メニューID
+    toggle_autostart_id: MenuId,
+    open_config_id: MenuId,
+    open_logs_id: MenuId,
+    exit_id: MenuId,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +27,12 @@ pub enum TrayMenuEvent {
 
 impl SystemTray {
     pub fn new() -> Result<Self> {
+        // 固定IDを作成
+        let toggle_autostart_id = MenuId::new("toggle_autostart");
+        let open_config_id = MenuId::new("open_config");
+        let open_logs_id = MenuId::new("open_logs");
+        let exit_id = MenuId::new("exit");
+        
         // 自動起動の現在の状態を確認
         let autostart_enabled = Self::check_autostart_status();
         let autostart_text = if autostart_enabled {
@@ -30,13 +41,13 @@ impl SystemTray {
             "自動起動を有効化 (現在: 無効)"
         };
         
-        // メニューアイテムを作成
-        let toggle_autostart = MenuItem::new(autostart_text, true, None);
+        // 固定IDを使用してメニューアイテムを作成
+        let toggle_autostart = MenuItem::with_id(toggle_autostart_id.clone(), autostart_text, true, None);
         let separator1 = PredefinedMenuItem::separator();
-        let open_config = MenuItem::new("設定ファイルを開く", true, None);
-        let open_logs = MenuItem::new("ログディレクトリを開く", true, None);
+        let open_config = MenuItem::with_id(open_config_id.clone(), "設定ファイルを開く", true, None);
+        let open_logs = MenuItem::with_id(open_logs_id.clone(), "ログディレクトリを開く", true, None);
         let separator2 = PredefinedMenuItem::separator();
-        let exit = MenuItem::new("終了", true, None);
+        let exit = MenuItem::with_id(exit_id.clone(), "終了", true, None);
 
         // コンテキストメニューを構築
         let menu = Menu::with_items(&[
@@ -62,29 +73,32 @@ impl SystemTray {
 
         // メニューイベントリスナーを設定
         let event_tx_clone = event_tx.clone();
-        let toggle_autostart_id = toggle_autostart.id().0.clone();
-        let open_config_id = open_config.id().0.clone();
-        let open_logs_id = open_logs.id().0.clone();
-        let exit_id = exit.id().0.clone();
+        let toggle_autostart_id_clone = toggle_autostart_id.clone();
+        let open_config_id_clone = open_config_id.clone();
+        let open_logs_id_clone = open_logs_id.clone();
+        let exit_id_clone = exit_id.clone();
         
         // メニューイベント処理用のタスクを起動
         tokio::spawn(async move {
             let menu_channel = MenuEvent::receiver();
             
             loop {
-                match menu_channel.try_recv() {
+                // ブロッキング受信でメニューイベントを待機
+                match menu_channel.recv() {
                     Ok(event) => {
                         tracing::debug!("Received menu event: {:?}", event.id);
                         
-                        let menu_event = match event.id.0.as_str() {
-                            id if id == toggle_autostart_id => TrayMenuEvent::ToggleAutoStart,
-                            id if id == open_config_id => TrayMenuEvent::OpenConfig,
-                            id if id == open_logs_id => TrayMenuEvent::OpenLogsDir,
-                            id if id == exit_id => TrayMenuEvent::Exit,
-                            _ => {
-                                tracing::warn!("Unknown menu item clicked: {}", event.id.0);
-                                continue;
-                            }
+                        let menu_event = if event.id == toggle_autostart_id_clone {
+                            TrayMenuEvent::ToggleAutoStart
+                        } else if event.id == open_config_id_clone {
+                            TrayMenuEvent::OpenConfig
+                        } else if event.id == open_logs_id_clone {
+                            TrayMenuEvent::OpenLogsDir
+                        } else if event.id == exit_id_clone {
+                            TrayMenuEvent::Exit
+                        } else {
+                            tracing::warn!("Unknown menu item clicked: {:?}", event.id);
+                            continue;
                         };
 
                         if let Err(_) = event_tx_clone.send(menu_event) {
@@ -92,9 +106,9 @@ impl SystemTray {
                             break;
                         }
                     }
-                    Err(_) => {
-                        // メニューイベントがない場合は少し待機
-                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    Err(e) => {
+                        tracing::error!("Menu event channel disconnected: {:?}", e);
+                        break;
                     }
                 }
             }
@@ -103,6 +117,10 @@ impl SystemTray {
         Ok(Self {
             tray_icon,
             menu_event_receiver: event_rx,
+            toggle_autostart_id,
+            open_config_id,
+            open_logs_id,
+            exit_id,
         })
     }
 
@@ -115,13 +133,33 @@ impl SystemTray {
             "自動起動を有効化 (現在: 無効)"
         };
         
-        // 新しいメニューを作成
-        let toggle_autostart = MenuItem::new(autostart_text, true, None);
+        // 固定IDを使用して新しいメニューを作成
+        let toggle_autostart = MenuItem::with_id(
+            self.toggle_autostart_id.clone(), 
+            autostart_text, 
+            true, 
+            None
+        );
         let separator1 = PredefinedMenuItem::separator();
-        let open_config = MenuItem::new("設定ファイルを開く", true, None);
-        let open_logs = MenuItem::new("ログディレクトリを開く", true, None);
+        let open_config = MenuItem::with_id(
+            self.open_config_id.clone(),
+            "設定ファイルを開く", 
+            true, 
+            None
+        );
+        let open_logs = MenuItem::with_id(
+            self.open_logs_id.clone(),
+            "ログディレクトリを開く", 
+            true, 
+            None
+        );
         let separator2 = PredefinedMenuItem::separator();
-        let exit = MenuItem::new("終了", true, None);
+        let exit = MenuItem::with_id(
+            self.exit_id.clone(),
+            "終了", 
+            true, 
+            None
+        );
 
         let menu = Menu::with_items(&[
             &toggle_autostart,
@@ -133,7 +171,7 @@ impl SystemTray {
         ])
         .context("Failed to create updated tray menu")?;
 
-        // メニューを更新（可能であれば）
+        // メニューを更新
         self.tray_icon.set_menu(Some(Box::new(menu)));
         
         tracing::debug!("Updated tray menu with autostart status: {}", autostart_enabled);
