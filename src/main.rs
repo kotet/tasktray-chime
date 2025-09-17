@@ -22,16 +22,6 @@ mod windows_utils {
     use winapi::um::winuser::{DispatchMessageW, GetMessageW, TranslateMessage, MSG};
     use std::mem;
 
-    pub fn pump_messages() {
-        unsafe {
-            let mut msg: MSG = mem::zeroed();
-            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            }
-        }
-    }
-
     pub fn pump_messages_non_blocking() -> bool {
         use winapi::um::winuser::{PeekMessageW, PM_REMOVE};
         

@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use tray_icon::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -104,11 +103,6 @@ impl SystemTray {
         self.menu_event_receiver.recv().await
     }
 
-    /// メニューイベントを非ブロッキングで受信
-    pub fn try_recv_menu_event(&mut self) -> Option<TrayMenuEvent> {
-        self.menu_event_receiver.try_recv().ok()
-    }
-
     /// デフォルトのアイコンを作成（シンプルな鐘のような形状）
     fn create_default_icon() -> tray_icon::Icon {
         // 16x16のアイコンデータ（RGBA形式）
@@ -187,56 +181,6 @@ impl SystemTray {
         {
             false
         }
-    }
-
-    #[cfg(target_os = "windows")]
-    fn set_windows_autostart(&self, enabled: bool) -> Result<()> {
-        use std::process::Command;
-        
-        let exe_path = std::env::current_exe()
-            .context("Failed to get current executable path")?;
-        
-        if enabled {
-            let output = Command::new("reg")
-                .args(&[
-                    "add",
-                    "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                    "/v", "TasktrayChime",
-                    "/t", "REG_SZ",
-                    "/d", &exe_path.to_string_lossy(),
-                    "/f"
-                ])
-                .output()
-                .context("Failed to execute reg command for adding autostart")?;
-            
-            if !output.status.success() {
-                return Err(anyhow::anyhow!(
-                    "Failed to enable autostart: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
-            
-            tracing::info!("Autostart enabled");
-        } else {
-            let output = Command::new("reg")
-                .args(&[
-                    "delete",
-                    "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                    "/v", "TasktrayChime",
-                    "/f"
-                ])
-                .output()
-                .context("Failed to execute reg command for removing autostart")?;
-            
-            // 削除は失敗してもよい（エントリが存在しない場合）
-            if output.status.success() {
-                tracing::info!("Autostart disabled");
-            } else {
-                tracing::info!("Autostart was not enabled");
-            }
-        }
-
-        Ok(())
     }
 
     #[cfg(target_os = "windows")]

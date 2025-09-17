@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Local, Utc};
 use cron::Schedule as CronSchedule;
 use std::collections::HashMap;
@@ -12,7 +12,6 @@ use crate::audio::AudioPlayer;
 #[derive(Debug, Clone)]
 pub struct ScheduleEvent {
     pub schedule_id: String,
-    pub file_path: String,
     pub triggered_at: DateTime<Local>,
 }
 
@@ -44,35 +43,6 @@ impl CronScheduler {
     }
 
     /// スケジュールを削除
-    pub fn remove_schedule(&mut self, schedule_id: &str) {
-        if self.schedules.remove(schedule_id).is_some() {
-            tracing::info!("Removed schedule: {}", schedule_id);
-        }
-    }
-
-    /// スケジュールを有効/無効に設定
-    pub fn set_schedule_enabled(&mut self, schedule_id: &str, enabled: bool) -> Result<()> {
-        if let Some(schedule) = self.schedules.get_mut(schedule_id) {
-            schedule.enabled = enabled;
-            tracing::info!("Schedule {} set to: {}", schedule_id, if enabled { "enabled" } else { "disabled" });
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Schedule not found: {}", schedule_id))
-        }
-    }
-
-    /// 全てのスケジュールをクリア
-    pub fn clear_schedules(&mut self) {
-        let count = self.schedules.len();
-        self.schedules.clear();
-        tracing::info!("Cleared {} schedules", count);
-    }
-
-    /// 現在のスケジュール一覧を取得
-    pub fn get_schedules(&self) -> Vec<Schedule> {
-        self.schedules.values().cloned().collect()
-    }
-
     /// スケジューラーを開始
     pub async fn start(&mut self) -> Result<mpsc::UnboundedReceiver<ScheduleEvent>> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -193,7 +163,6 @@ impl CronScheduler {
             // イベント送信
             let event = ScheduleEvent {
                 schedule_id: schedule.id.clone(),
-                file_path: schedule.file.clone(),
                 triggered_at: now_exec,
             };
             
@@ -249,20 +218,5 @@ impl CronScheduler {
         CronSchedule::from_str(cron_expr)
             .map_err(|e| anyhow::anyhow!("Invalid cron expression '{}': {}", cron_expr, e))?;
         Ok(())
-    }
-
-    /// 指定したcron式の次回3回の実行時間を表示（デバッグ用）
-    pub fn preview_next_runs(cron_expr: &str, count: usize) -> Result<Vec<DateTime<Local>>> {
-        let schedule = CronSchedule::from_str(cron_expr)
-            .map_err(|e| anyhow::anyhow!("Invalid cron expression: {}", e))?;
-        
-        let mut results = Vec::new();
-        let current = Utc::now();
-        
-        for next in schedule.after(&current).take(count) {
-            results.push(next.with_timezone(&Local));
-        }
-        
-        Ok(results)
     }
 }
