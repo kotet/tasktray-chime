@@ -60,21 +60,35 @@ impl SystemTray {
         let open_logs_id = open_logs.id().0.clone();
         let exit_id = exit.id().0.clone();
         
-        std::thread::spawn(move || {
+        // メニューイベント処理用のタスクを起動
+        tokio::spawn(async move {
             let menu_channel = MenuEvent::receiver();
             
-            while let Ok(event) = menu_channel.recv() {
-                let menu_event = match event.id.0.as_str() {
-                    id if id == toggle_autostart_id => TrayMenuEvent::ToggleAutoStart,
-                    id if id == open_config_id => TrayMenuEvent::OpenConfig,
-                    id if id == open_logs_id => TrayMenuEvent::OpenLogsDir,
-                    id if id == exit_id => TrayMenuEvent::Exit,
-                    _ => continue,
-                };
+            loop {
+                match menu_channel.try_recv() {
+                    Ok(event) => {
+                        tracing::debug!("Received menu event: {:?}", event.id);
+                        
+                        let menu_event = match event.id.0.as_str() {
+                            id if id == toggle_autostart_id => TrayMenuEvent::ToggleAutoStart,
+                            id if id == open_config_id => TrayMenuEvent::OpenConfig,
+                            id if id == open_logs_id => TrayMenuEvent::OpenLogsDir,
+                            id if id == exit_id => TrayMenuEvent::Exit,
+                            _ => {
+                                tracing::warn!("Unknown menu item clicked: {}", event.id.0);
+                                continue;
+                            }
+                        };
 
-                if let Err(_) = event_tx_clone.send(menu_event) {
-                    tracing::warn!("Failed to send tray menu event");
-                    break;
+                        if let Err(_) = event_tx_clone.send(menu_event) {
+                            tracing::warn!("Failed to send tray menu event - channel closed");
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        // メニューイベントがない場合は少し待機
+                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    }
                 }
             }
         });
@@ -95,47 +109,62 @@ impl SystemTray {
         self.menu_event_receiver.try_recv().ok()
     }
 
-    /// デフォルトのアイコンを作成（シンプルなドット）
+    /// デフォルトのアイコンを作成（シンプルな鐘のような形状）
     fn create_default_icon() -> tray_icon::Icon {
         // 16x16のアイコンデータ（RGBA形式）
-        let icon_data = vec![
-            // 透明な背景に白い円
-            0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,     255, 255, 255, 128,
-            255, 255, 255, 192, 255, 255, 255, 128, 0, 0, 0, 0,     0, 0, 0, 0,
-            0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,
-            0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,
-            
-            0, 0, 0, 0,     0, 0, 0, 0,     255, 255, 255, 128, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0,
-            0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,
-            0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,
-            
-            0, 0, 0, 0,     255, 255, 255, 128, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128,
-            0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,
-            0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,
-            
-            255, 255, 255, 128, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 128, 0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,
-            0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,
-        ];
+        // より明確な鐘の形状を作成
+        let mut icon_data = vec![0u8; 1024]; // 16x16 * 4 (RGBA)
+        
+        // アイコンを描画する関数
+        let mut set_pixel = |x: usize, y: usize, r: u8, g: u8, b: u8, a: u8| {
+            if x < 16 && y < 16 {
+                let idx = (y * 16 + x) * 4;
+                if idx + 3 < icon_data.len() {
+                    icon_data[idx] = r;     // Red
+                    icon_data[idx + 1] = g; // Green  
+                    icon_data[idx + 2] = b; // Blue
+                    icon_data[idx + 3] = a; // Alpha
+                }
+            }
+        };
 
-        // 必要なサイズまでパディング（16x16 RGBA = 1024要素必要）
-        let mut full_icon_data = Vec::with_capacity(1024);
-        for i in 0..1024 {
-            if i < icon_data.len() {
-                full_icon_data.push(icon_data[i]);
-            } else {
-                full_icon_data.push(0);
+        // 白い鐘の形状を描画
+        for y in 0..16 {
+            for x in 0..16 {
+                let center_x = 8.0;
+                let center_y = 8.0;
+                let dx = x as f32 - center_x;
+                let dy = y as f32 - center_y;
+                let distance = (dx * dx + dy * dy).sqrt();
+                
+                // 鐘の外形
+                if distance <= 6.0 && distance >= 3.0 {
+                    set_pixel(x, y, 255, 255, 255, 255); // 白色
+                } else if distance <= 7.0 && distance >= 6.0 {
+                    set_pixel(x, y, 200, 200, 200, 180); // 薄い白
+                }
+                
+                // 鐘の中心部
+                if distance <= 1.5 {
+                    set_pixel(x, y, 255, 200, 100, 255); // 薄い黄色
+                }
             }
         }
 
-        tray_icon::Icon::from_rgba(full_icon_data, 16, 16)
-            .unwrap_or_else(|_| {
-                // フォールバック: 完全に透明なアイコン
-                let transparent_data = vec![0; 1024]; // 16x16 RGBA
-                tray_icon::Icon::from_rgba(transparent_data, 16, 16)
+        tray_icon::Icon::from_rgba(icon_data, 16, 16)
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to create icon from data: {}. Creating fallback.", e);
+                // フォールバック: シンプルな白い四角
+                let mut fallback_data = vec![0u8; 1024];
+                for i in (0..1024).step_by(4) {
+                    if i + 3 < fallback_data.len() {
+                        fallback_data[i] = 255;     // Red
+                        fallback_data[i + 1] = 255; // Green
+                        fallback_data[i + 2] = 255; // Blue
+                        fallback_data[i + 3] = 128; // Alpha
+                    }
+                }
+                tray_icon::Icon::from_rgba(fallback_data, 16, 16)
                     .expect("Failed to create fallback icon")
             })
     }

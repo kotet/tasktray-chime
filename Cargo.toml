@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [target.'cfg(windows)'.dependencies]
 # Windows特有の依存関係があればここに追加
+winapi = { version = "0.3", features = ["winuser"] }
 
 [dependencies]
 anyhow = "1.0.99"

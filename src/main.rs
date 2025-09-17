@@ -17,6 +17,36 @@ use audio::AudioPlayer;
 use scheduler::CronScheduler;
 use tray::{SystemTray, TrayMenuEvent};
 
+#[cfg(target_os = "windows")]
+mod windows_utils {
+    use winapi::um::winuser::{DispatchMessageW, GetMessageW, TranslateMessage, MSG};
+    use std::mem;
+
+    pub fn pump_messages() {
+        unsafe {
+            let mut msg: MSG = mem::zeroed();
+            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+
+    pub fn pump_messages_non_blocking() -> bool {
+        use winapi::um::winuser::{PeekMessageW, PM_REMOVE};
+        
+        unsafe {
+            let mut msg: MSG = mem::zeroed();
+            let has_message = PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0;
+            if has_message {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+            has_message
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // 設定ファイルを読み込み（存在しない場合は作成）
@@ -99,6 +129,15 @@ async fn main() -> Result<()> {
 
     // メインイベントループ
     loop {
+        // Windows: メッセージポンプを実行
+        #[cfg(target_os = "windows")]
+        {
+            // ノンブロッキングでメッセージを処理
+            while windows_utils::pump_messages_non_blocking() {
+                // メッセージがある限り処理を継続
+            }
+        }
+
         tokio::select! {
             // システム終了シグナル
             _ = signal::ctrl_c() => {
@@ -106,9 +145,10 @@ async fn main() -> Result<()> {
                 break;
             }
 
-            // トレイメニューイベント
+            // トレイメニューイベント（高頻度チェック）
             menu_event = system_tray.recv_menu_event() => {
                 if let Some(event) = menu_event {
+                    info!("Received tray menu event: {:?}", event);
                     match handle_tray_event(event, &mut system_tray, &config).await {
                         Ok(should_exit) => {
                             if should_exit {
@@ -138,6 +178,11 @@ async fn main() -> Result<()> {
                 if let Err(e) = logging::cleanup_old_logs(&config.logging) {
                     warn!("Failed to cleanup old logs: {}", e);
                 }
+            }
+
+            // 定期的なメッセージポンプとクリーンアップ（100ms毎）
+            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
+                // Windows: メッセージポンプ用のタイマー（他のタスクが実行されていない時）
             }
         }
     }
