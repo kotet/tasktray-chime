@@ -15,6 +15,8 @@ pub struct SystemTray {
     open_config_id: MenuId,
     open_logs_id: MenuId,
     exit_id: MenuId,
+    // シャットダウン用チャンネル
+    shutdown_tx: mpsc::UnboundedSender<()>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +72,9 @@ impl SystemTray {
 
         // メニューイベント処理用のチャンネル
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        
+        // シャットダウン用チャンネル
+        let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
 
         // メニューイベントリスナーを設定
         let event_tx_clone = event_tx.clone();
@@ -83,8 +88,14 @@ impl SystemTray {
             let menu_channel = MenuEvent::receiver();
             
             loop {
-                // ブロッキング受信でメニューイベントを待機
-                match menu_channel.recv() {
+                // シャットダウンシグナルをチェック
+                if shutdown_rx.try_recv().is_ok() {
+                    tracing::debug!("Menu event listener received shutdown signal");
+                    break;
+                }
+                
+                // ノンブロッキングでメニューイベントをチェック
+                match menu_channel.try_recv() {
                     Ok(event) => {
                         tracing::debug!("Received menu event: {:?}", event.id);
                         
@@ -106,12 +117,13 @@ impl SystemTray {
                             break;
                         }
                     }
-                    Err(e) => {
-                        tracing::error!("Menu event channel disconnected: {:?}", e);
-                        break;
+                    Err(_) => {
+                        // イベントがない場合は少し待機
+                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                     }
                 }
             }
+            tracing::debug!("Menu event listener task terminated");
         });
 
         Ok(Self {
@@ -121,6 +133,7 @@ impl SystemTray {
             open_config_id,
             open_logs_id,
             exit_id,
+            shutdown_tx,
         })
     }
 
@@ -181,6 +194,13 @@ impl SystemTray {
     /// メニューイベントを受信
     pub async fn recv_menu_event(&mut self) -> Option<TrayMenuEvent> {
         self.menu_event_receiver.recv().await
+    }
+    
+    /// システムトレイのシャットダウン処理
+    pub fn shutdown(&self) {
+        // メニューイベントリスナータスクにシャットダウンシグナルを送信
+        let _ = self.shutdown_tx.send(());
+        tracing::debug!("Sent shutdown signal to menu event listener");
     }
 
     /// デフォルトのアイコンを作成（シンプルな鐘のような形状）

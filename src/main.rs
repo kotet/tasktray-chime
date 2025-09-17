@@ -173,13 +173,20 @@ async fn main() -> Result<()> {
 
     // 終了処理
     info!("Shutting down application");
+    
+    // システムトレイの終了処理
+    system_tray.shutdown();
+    
+    // スケジューラーの終了処理
     scheduler.stop();
     
-    // 少し待機してスケジューラーが確実に停止するまで待つ
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    // バックグラウンドタスクが終了するまで待機
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
     
     info!("Application shutdown complete");
-    Ok(())
+    
+    // 確実にプロセスを終了
+    std::process::exit(0);
 }
 
 /// トレイメニューイベントを処理
@@ -224,7 +231,12 @@ async fn handle_tray_event(
 
         TrayMenuEvent::Exit => {
             info!("Exit requested from tray menu");
-            Ok(true) // 終了フラグを返す
+            
+            // システムトレイの終了処理
+            system_tray.shutdown();
+            
+            // 確実にプロセスを終了
+            std::process::exit(0);
         }
     }
 }
