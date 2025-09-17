@@ -75,19 +75,36 @@ check-config: ## 設定ファイルの妥当性をチェック
 	fi
 	@echo "設定ファイルOK: $(CONFIG_FILE)"
 
+.PHONY: check-audio
+check-audio: ## 音声ファイルの存在を確認
+	@echo "=== 音声ファイルチェック ==="
+	@if [ ! -d $(AUDIO_DIR) ]; then \
+		echo "音声ディレクトリが見つかりません: $(AUDIO_DIR)"; \
+		exit 1; \
+	fi
+	@if [ ! -f $(AUDIO_DIR)/chime.wav ]; then \
+		echo "音声ファイルが見つかりません: $(AUDIO_DIR)/chime.wav"; \
+		exit 1; \
+	fi
+	@if [ ! -f $(AUDIO_DIR)/bell.wav ]; then \
+		echo "音声ファイルが見つかりません: $(AUDIO_DIR)/bell.wav"; \
+		exit 1; \
+	fi
+	@echo "音声ファイルOK: $(AUDIO_DIR)/"
+
 .PHONY: run
-run: build generate-audio check-config ## Linux環境でアプリケーションを実行
+run: build check-audio check-config ## Linux環境でアプリケーションを実行
 	@echo "=== アプリケーション実行 (Linux) ==="
 	@echo "注意: dev container環境では音声デバイスが利用できないため、エラーが発生する可能性があります"
 	./target/debug/$(BINARY_NAME)
 
 .PHONY: run-release
-run-release: build-release generate-audio check-config ## Linux環境でリリース版を実行
+run-release: build-release check-audio check-config ## Linux環境でリリース版を実行
 	@echo "=== リリース版実行 (Linux) ==="
 	./target/release/$(BINARY_NAME)
 
 .PHONY: package-linux
-package-linux: build-release generate-audio ## Linux向けパッケージを作成
+package-linux: build-release check-audio ## Linux向けパッケージを作成
 	@echo "=== Linux向けパッケージ作成 ==="
 	mkdir -p $(RELEASE_DIR)/linux
 	cp target/release/$(BINARY_NAME) $(RELEASE_DIR)/linux/
@@ -97,7 +114,7 @@ package-linux: build-release generate-audio ## Linux向けパッケージを作�
 	@echo "Linux パッケージ作成完了: $(RELEASE_DIR)/linux/"
 
 .PHONY: package-windows
-package-windows: build-windows-release generate-audio ## Windows向けパッケージを作成
+package-windows: build-windows-release check-audio ## Windows向けパッケージを作成
 	@echo "=== Windows向けパッケージ作成 ==="
 	mkdir -p $(RELEASE_DIR)/windows
 	cp target/$(WINDOWS_TARGET)/release/$(BINARY_NAME).exe $(RELEASE_DIR)/windows/
@@ -149,10 +166,10 @@ info: ## プロジェクト情報を表示
 		echo "未作成"; \
 	fi
 	@echo -n "音声ファイル: "
-	@if [ -d $(AUDIO_DIR) ] && [ -f $(AUDIO_DIR)/chime.wav ]; then \
+	@if [ -d $(AUDIO_DIR) ] && [ -f $(AUDIO_DIR)/chime.wav ] && [ -f $(AUDIO_DIR)/bell.wav ]; then \
 		echo "存在"; \
 	else \
-		echo "未作成 (make generate-audio で作成できます)"; \
+		echo "不完全 ($(AUDIO_DIR)/chime.wav, $(AUDIO_DIR)/bell.wav が必要です)"; \
 	fi
 
 .PHONY: logs
