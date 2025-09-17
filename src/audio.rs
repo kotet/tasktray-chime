@@ -17,7 +17,7 @@ impl AudioPlayer {
     pub fn new(config: &AudioConfig) -> Result<Self> {
         let global_volume = (config.global_volume as f32) / 100.0;
 
-        // OutputStreamBuilder::open_default_stream() を使用
+        // OutputStreamBuilder を使用
         let stream = OutputStreamBuilder::open_default_stream()
             .map_err(|e| anyhow::anyhow!("Failed to open default audio stream: {}", e))?;
 
@@ -78,30 +78,35 @@ impl AudioPlayer {
         // 非同期タスクで再生実行
         let global_volume = *self.global_volume.lock().unwrap();
         let path_for_log = path_str.clone();
+        let stream_ref = self._stream.clone();
 
         tokio::task::spawn_blocking(move || -> Result<()> {
-            let stream = OutputStreamBuilder::open_default_stream()
-                .context("Failed to initialize audio output stream")?;
+            tracing::debug!("Starting audio playback task for: {}", path_for_log);
             
-            let sink = Sink::connect_new(&stream.mixer());
-
+            // 既存のストリームを使用
+            let sink = Sink::connect_new(&stream_ref.mixer());
+            
+            // デコーダーを作成
             let cursor = std::io::Cursor::new(audio_data);
             let decoder = Decoder::new(cursor)
                 .with_context(|| format!("Failed to decode audio: {}", path_for_log))?;
 
+            tracing::debug!("Setting volume to {} for: {}", global_volume, path_for_log);
             sink.set_volume(global_volume);
+            
+            tracing::debug!("Starting audio stream for: {}", path_for_log);
             sink.append(decoder);
 
             // 再生完了まで待機
+            tracing::debug!("Waiting for audio completion: {}", path_for_log);
             sink.sleep_until_end();
             
-            tracing::debug!("Finished playing sound: {}", path_for_log);
+            tracing::info!("Successfully completed audio playback: {}", path_for_log);
             Ok(())
         })
         .await
-        .context("Audio playback task failed")??;
-
-        Ok(())
+        .context("Audio playback task failed")
+        .and_then(|result| result)
     }
 
     /// 音声を同期的に再生（完了まで待機）
@@ -124,10 +129,8 @@ impl AudioPlayer {
             }
         };
 
-        let stream = OutputStreamBuilder::open_default_stream()
-            .context("Failed to initialize audio output stream")?;
-        
-        let sink = Sink::connect_new(&stream.mixer());
+        // 既存のストリームを使用
+        let sink = Sink::connect_new(&self._stream.mixer());
 
         let cursor = std::io::Cursor::new(audio_data);
         let decoder = Decoder::new(cursor)

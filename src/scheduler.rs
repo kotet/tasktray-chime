@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::time::{sleep_until, Instant, Duration};
+use tokio::time::Duration;
 use crate::config::Schedule;
 use crate::audio::AudioPlayer;
 
@@ -122,8 +122,9 @@ impl CronScheduler {
     ) {
         let now = Local::now();
         let mut next_run_time: Option<DateTime<Local>> = None;
+        let mut schedules_to_execute = Vec::new();
 
-        // 有効なスケジュールをチェック
+        // 有効なスケジュールをチェックし、次回実行時間を計算
         for schedule in schedules.values() {
             if !schedule.enabled {
                 continue;
@@ -131,37 +132,19 @@ impl CronScheduler {
 
             match Self::get_next_run_time(&schedule.cron, &now) {
                 Ok(next_time) => {
-                    // 次回実行時間が現在時刻から1秒以内の場合、実行
+                    // 実行すべきスケジュールかどうかチェック（1分の余裕を持って判定）
                     let time_diff = next_time.signed_duration_since(now);
-                    if time_diff.num_seconds() <= 1 && time_diff.num_seconds() >= 0 {
+                    
+                    // 次回実行時間が現在時刻から5秒以内なら実行対象とする
+                    if time_diff.num_seconds() <= 5 && time_diff.num_seconds() >= -5 {
                         tracing::info!(
-                            "Triggering schedule '{}' at {} (cron: {})",
+                            "Schedule '{}' ready for execution at {} (cron: {}), time diff: {} seconds",
                             schedule.id,
-                            now.format("%Y-%m-%d %H:%M:%S"),
-                            schedule.cron
+                            next_time.format("%Y-%m-%d %H:%M:%S"),
+                            schedule.cron,
+                            time_diff.num_seconds()
                         );
-
-                        // 音声再生
-                        let audio_player_clone = audio_player.clone();
-                        let file_path = schedule.file.clone();
-                        let schedule_id = schedule.id.clone();
-                        
-                        tokio::spawn(async move {
-                            if let Err(e) = audio_player_clone.play_sound(&file_path).await {
-                                tracing::error!("Failed to play sound for schedule '{}': {}", schedule_id, e);
-                            }
-                        });
-
-                        // イベント送信
-                        let event = ScheduleEvent {
-                            schedule_id: schedule.id.clone(),
-                            file_path: schedule.file.clone(),
-                            triggered_at: now,
-                        };
-                        
-                        if let Err(e) = event_tx.send(event) {
-                            tracing::warn!("Failed to send schedule event: {}", e);
-                        }
+                        schedules_to_execute.push(schedule.clone());
                     }
 
                     // 次回実行時間を更新
@@ -180,22 +163,63 @@ impl CronScheduler {
             }
         }
 
+        // 実行対象のスケジュールを実行
+        for schedule in schedules_to_execute {
+            let now_exec = Local::now();
+            tracing::info!(
+                "Executing schedule '{}' at {} (cron: {})",
+                schedule.id,
+                now_exec.format("%Y-%m-%d %H:%M:%S"),
+                schedule.cron
+            );
+
+            // 音声再生
+            let audio_player_clone = audio_player.clone();
+            let file_path = schedule.file.clone();
+            let schedule_id = schedule.id.clone();
+            
+            tokio::spawn(async move {
+                tracing::info!("Starting audio playback for schedule '{}': {}", schedule_id, file_path);
+                match audio_player_clone.play_sound(&file_path).await {
+                    Ok(()) => {
+                        tracing::info!("Successfully completed audio playback for schedule '{}'", schedule_id);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to play sound for schedule '{}': {}", schedule_id, e);
+                    }
+                }
+            });
+
+            // イベント送信
+            let event = ScheduleEvent {
+                schedule_id: schedule.id.clone(),
+                file_path: schedule.file.clone(),
+                triggered_at: now_exec,
+            };
+            
+            if let Err(e) = event_tx.send(event) {
+                tracing::warn!("Failed to send schedule event: {}", e);
+            }
+        }
+
         // 次回実行時間まで待機
         if let Some(next_time) = next_run_time {
-            let now_instant = Instant::now();
-            let wait_duration = next_time.signed_duration_since(Local::now());
+            let current_time = Local::now();
+            let wait_duration = next_time.signed_duration_since(current_time);
             
-            if wait_duration.num_milliseconds() > 0 {
-                let wait_std_duration = Duration::from_millis(wait_duration.num_milliseconds() as u64);
-                let wake_time = now_instant + wait_std_duration;
+            if wait_duration.num_milliseconds() > 100 {  // 100ms以上の場合のみ待機
+                let wait_ms = wait_duration.num_milliseconds().max(1000) as u64;  // 最小1秒待機
                 
                 tracing::debug!(
                     "Next schedule at {}, waiting {} ms",
                     next_time.format("%Y-%m-%d %H:%M:%S"),
-                    wait_duration.num_milliseconds()
+                    wait_ms
                 );
                 
-                sleep_until(wake_time).await;
+                tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+            } else {
+                // 短時間待機
+                tokio::time::sleep(Duration::from_millis(1000)).await;
             }
         } else {
             // アクティブなスケジュールがない場合は1秒待機
@@ -208,7 +232,9 @@ impl CronScheduler {
         let schedule = CronSchedule::from_str(cron_expr)
             .map_err(|e| anyhow::anyhow!("Invalid cron expression '{}': {}", cron_expr, e))?;
         
-        let from_utc = from.with_timezone(&Utc);
+        // 1秒前から検索開始して、現在時刻付近の実行時間をより正確に捕捉
+        let search_from = from.clone() - chrono::Duration::seconds(1);
+        let from_utc = search_from.with_timezone(&Utc);
         
         // cronクレートは次回実行時間をUTCで返すため、ローカル時間に変換
         if let Some(next_utc) = schedule.after(&from_utc).next() {

@@ -103,10 +103,30 @@ async fn main() -> Result<()> {
     // 音声ファイルを事前にロード
     for schedule in &config.schedules {
         if schedule.enabled {
+            info!("Preloading audio file: {}", schedule.file);
             if let Err(e) = audio_player.preload_sound(&schedule.file) {
                 error!("Failed to preload sound file '{}': {}", schedule.file, e);
             }
         }
+    }
+
+    // 音声システムのテスト（最初の音声ファイルで）
+    if !config.schedules.is_empty() {
+        let test_file = &config.schedules[0].file;
+        info!("Testing audio system with file: {}", test_file);
+        
+        match audio_player.play_sound(test_file).await {
+            Ok(()) => {
+                info!("Audio system test successful");
+            }
+            Err(e) => {
+                error!("Audio system test failed: {}", e);
+                // 続行するが、警告として扱う
+            }
+        }
+        
+        // 少し待機してから次の処理へ
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
     }
 
     // cronスケジューラーを初期化
