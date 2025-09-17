@@ -15,6 +15,7 @@ winapi = { version = "0.3", features = ["winuser"] }
 anyhow = "1.0.99"
 chrono = { version = "0.4.42", features = ["serde"] }
 cron = "0.15.0"
+image = { version = "0.25", features = ["ico"] }
 rodio = { version = "0.21.1", features = ["symphonia-mp3", "symphonia-all"] }
 serde = { version = "1.0.225", features = ["derive"] }
 serde_yaml = "0.9.34"
@@ -23,6 +24,9 @@ tracing = "0.1.41"
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 tray-icon = "0.21.1"
+
+[build-dependencies]
+winres = "0.1"
 
 [dev-dependencies]
 rodio = { version = "0.21.1", features = ["default"] }

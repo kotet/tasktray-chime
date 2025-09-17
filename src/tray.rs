@@ -66,7 +66,7 @@ impl SystemTray {
         let tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("Tasktray Chime - 時報アプリ")
-            .with_icon(Self::create_default_icon())
+            .with_icon(Self::create_tray_icon())
             .build()
             .context("Failed to create tray icon")?;
 
@@ -203,8 +203,39 @@ impl SystemTray {
         tracing::debug!("Sent shutdown signal to menu event listener");
     }
 
-    /// デフォルトのアイコンを作成（シンプルな鐘のような形状）
-    fn create_default_icon() -> tray_icon::Icon {
+    /// タスクトレイアイコンを作成（組み込みアイコンファイル使用）
+    fn create_tray_icon() -> tray_icon::Icon {
+        // 組み込みアイコンデータを使用
+        let icon_bytes = include_bytes!("../resources/icons/chime-icon-32.ico");
+        
+        // ICOファイルからアイコンを作成を試行
+        match image::load_from_memory_with_format(icon_bytes, image::ImageFormat::Ico) {
+            Ok(img) => {
+                let rgba_img = img.to_rgba8();
+                let (width, height) = rgba_img.dimensions();
+                let rgba_data = rgba_img.into_raw();
+                
+                match tray_icon::Icon::from_rgba(rgba_data, width, height) {
+                    Ok(icon) => {
+                        tracing::debug!("Successfully loaded tray icon from embedded resource");
+                        return icon;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create RGBA icon: {}. Using fallback.", e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to decode embedded icon: {}. Using fallback.", e);
+            }
+        }
+
+        // フォールバック: デフォルトアイコンを作成
+        Self::create_fallback_icon()
+    }
+
+    /// フォールバックアイコンを作成（シンプルな鐘のような形状）
+    fn create_fallback_icon() -> tray_icon::Icon {
         // 16x16のアイコンデータ（RGBA形式）
         // より明確な鐘の形状を作成
         let mut icon_data = vec![0u8; 1024]; // 16x16 * 4 (RGBA)
