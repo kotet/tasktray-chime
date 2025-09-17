@@ -2,10 +2,20 @@ FROM mcr.microsoft.com/devcontainers/rust:1-1-bullseye
 
 # 必要なパッケージのインストール
 RUN apt-get update \
-    && apt-get install -y curl gnupg \
+    && apt-get install -y \
+    curl \
+    gnupg \
+    libasound2-dev \
+    libgtk-3-dev \
+    libxdo-dev \
+    mingw-w64 \
+    gcc-mingw-w64 \
     && rm -rf /var/lib/apt/lists/*
 
 USER vscode
+
+# Windows向けRustターゲットを追加
+RUN rustup target add x86_64-pc-windows-gnu
 
 # Node.jsのインストール（npmのため）
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash

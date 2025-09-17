@@ -1,0 +1,13 @@
+{
+    "servers": {
+        "lsmcp": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@mizchi/lsmcp",
+                "--bin=rust-analyzer",
+                "--files=\"**/*.rs\""
+            ],
+        }
+    }
+}

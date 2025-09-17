@@ -1,0 +1,69 @@
+# Rust
+/target
+
+# IDE
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+.vscode/.ropeproject
+# Keep .vscode/mcp.json if it exists
+# Keep .cargo/config.toml for cross-compilation settings
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Application specific
+/logs/*.log
+/release
+/sounds
+/audios/*.wav
+/audios/*.mp3
+/audios/*.flac
+
+# Temporary files
+generate_test_audio
+generate_audio
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Test files (keep example configs)
+config_test.yaml
+test_config.yaml
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib

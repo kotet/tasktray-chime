@@ -12,7 +12,10 @@
 				"Google.gemini-cli-vscode-ide-companion"
 			]
 		}
-	}
+	},
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	"postCreateCommand": "cp /workspaces/tasktray-chime/.cargo/config.toml ~/.cargo/config.toml 2>/dev/null || true"
 
 	// Use 'mounts' to make the cargo cache persistent in a Docker Volume.
 	// "mounts": [
