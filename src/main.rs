@@ -18,7 +18,7 @@ use tray::{SystemTray, TrayMenuEvent};
 
 #[cfg(target_os = "windows")]
 mod windows_utils {
-    use winapi::um::winuser::{DispatchMessageW, GetMessageW, TranslateMessage, MSG};
+    use winapi::um::winuser::{DispatchMessageW, TranslateMessage, MSG};
     use std::mem;
 
     pub fn pump_messages_non_blocking() -> bool {
@@ -99,6 +99,11 @@ async fn main() -> Result<()> {
     // システムトレイを初期化
     let mut system_tray = SystemTray::new()
         .context("Failed to initialize system tray")?;
+
+    // 初期化後にメニューを更新して正確な自動起動状態を表示
+    if let Err(e) = system_tray.update_menu() {
+        warn!("Failed to update tray menu after initialization: {}", e);
+    }
 
     // スケジューラーを開始
     let mut schedule_events = scheduler.start().await

@@ -8,7 +8,7 @@ use tray_icon::menu::MenuEvent;
 use std::path::Path;
 
 pub struct SystemTray {
-    _tray_icon: TrayIcon,
+    tray_icon: TrayIcon,
     menu_event_receiver: mpsc::UnboundedReceiver<TrayMenuEvent>,
 }
 
@@ -22,8 +22,16 @@ pub enum TrayMenuEvent {
 
 impl SystemTray {
     pub fn new() -> Result<Self> {
+        // 自動起動の現在の状態を確認
+        let autostart_enabled = Self::check_autostart_status();
+        let autostart_text = if autostart_enabled {
+            "自動起動を無効化 (現在: 有効)"
+        } else {
+            "自動起動を有効化 (現在: 無効)"
+        };
+        
         // メニューアイテムを作成
-        let toggle_autostart = MenuItem::new("自動起動切替", true, None);
+        let toggle_autostart = MenuItem::new(autostart_text, true, None);
         let separator1 = PredefinedMenuItem::separator();
         let open_config = MenuItem::new("設定ファイルを開く", true, None);
         let open_logs = MenuItem::new("ログディレクトリを開く", true, None);
@@ -93,9 +101,43 @@ impl SystemTray {
         });
 
         Ok(Self {
-            _tray_icon: tray_icon,
+            tray_icon,
             menu_event_receiver: event_rx,
         })
+    }
+
+    /// メニューを現在の自動起動状態に基づいて更新
+    pub fn update_menu(&mut self) -> Result<()> {
+        let autostart_enabled = Self::check_autostart_status();
+        let autostart_text = if autostart_enabled {
+            "自動起動を無効化 (現在: 有効)"
+        } else {
+            "自動起動を有効化 (現在: 無効)"
+        };
+        
+        // 新しいメニューを作成
+        let toggle_autostart = MenuItem::new(autostart_text, true, None);
+        let separator1 = PredefinedMenuItem::separator();
+        let open_config = MenuItem::new("設定ファイルを開く", true, None);
+        let open_logs = MenuItem::new("ログディレクトリを開く", true, None);
+        let separator2 = PredefinedMenuItem::separator();
+        let exit = MenuItem::new("終了", true, None);
+
+        let menu = Menu::with_items(&[
+            &toggle_autostart,
+            &separator1,
+            &open_config,
+            &open_logs,
+            &separator2,
+            &exit,
+        ])
+        .context("Failed to create updated tray menu")?;
+
+        // メニューを更新（可能であれば）
+        self.tray_icon.set_menu(Some(Box::new(menu)));
+        
+        tracing::debug!("Updated tray menu with autostart status: {}", autostart_enabled);
+        Ok(())
     }
 
     /// メニューイベントを受信
@@ -164,17 +206,86 @@ impl SystemTray {
     }
 
     /// 自動起動の状態を設定
-    pub fn set_autostart_status(&mut self, _enabled: bool) -> Result<()> {
-        // TODO: Windowsレジストリへの自動開始設定を実装
-        tracing::info!("Autostart status update requested (not implemented)");
+    pub fn set_autostart_status(&mut self, enabled: bool) -> Result<()> {
+        let result = {
+            #[cfg(target_os = "windows")]
+            {
+                self.set_windows_autostart_status(enabled)
+            }
+            
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = enabled; // 未使用変数警告を回避
+                tracing::info!("Autostart setting not implemented for this platform");
+                Ok(())
+            }
+        };
+
+        // 状態変更後にメニューを更新
+        if result.is_ok() {
+            if let Err(e) = self.update_menu() {
+                tracing::warn!("Failed to update menu after autostart status change: {}", e);
+            }
+        }
+
+        result
+    }
+
+    #[cfg(target_os = "windows")]
+    fn set_windows_autostart_status(&self, enabled: bool) -> Result<()> {
+        use std::process::Command;
+        
+        let exe_path = std::env::current_exe()
+            .context("Failed to get current executable path")?;
+        
+        if enabled {
+            let output = Command::new("reg")
+                .args(&[
+                    "add",
+                    "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v", "TasktrayChime",
+                    "/t", "REG_SZ",
+                    "/d", &exe_path.to_string_lossy(),
+                    "/f"
+                ])
+                .output()
+                .context("Failed to execute reg command for adding autostart")?;
+            
+            if !output.status.success() {
+                return Err(anyhow::anyhow!(
+                    "Failed to enable autostart: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+            
+            tracing::info!("Autostart enabled");
+        } else {
+            let output = Command::new("reg")
+                .args(&[
+                    "delete",
+                    "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v", "TasktrayChime",
+                    "/f"
+                ])
+                .output()
+                .context("Failed to execute reg command for removing autostart")?;
+            
+            // 削除は失敗してもよい（エントリが存在しない場合）
+            if output.status.success() {
+                tracing::info!("Autostart disabled");
+            } else {
+                tracing::info!("Autostart was not enabled");
+            }
+        }
+
         Ok(())
     }
 
-    /// 自動起動の現在状態を取得
-    pub fn get_autostart_status(&self) -> bool {
+    /// 自動起動の現在状態を取得（静的メソッド）
+    fn check_autostart_status() -> bool {
         #[cfg(target_os = "windows")]
         {
-            self.get_windows_autostart_status().unwrap_or(false)
+            Self::check_windows_autostart_status().unwrap_or(false)
         }
         
         #[cfg(not(target_os = "windows"))]
@@ -183,8 +294,13 @@ impl SystemTray {
         }
     }
 
+    /// 自動起動の現在状態を取得
+    pub fn get_autostart_status(&self) -> bool {
+        Self::check_autostart_status()
+    }
+
     #[cfg(target_os = "windows")]
-    fn get_windows_autostart_status(&self) -> Result<bool> {
+    fn check_windows_autostart_status() -> Result<bool> {
         use std::process::Command;
         
         let output = Command::new("reg")

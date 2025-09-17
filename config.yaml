@@ -1,6 +1,3 @@
-app:
-  start_on_login: false
-
 logging:
   level: "info"
   directory: "./logs"

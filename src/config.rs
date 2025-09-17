@@ -4,16 +4,10 @@ use anyhow::{Context, Result};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
-    pub app: AppConfig,
     pub logging: LoggingConfig,
     pub audio: AudioConfig,
     pub schedules: Vec<Schedule>,
     pub behavior: BehaviorConfig,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct AppConfig {
-    pub start_on_login: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -70,9 +64,6 @@ impl Config {
     /// デフォルトの設定を作成
     pub fn default() -> Self {
         Self {
-            app: AppConfig {
-                start_on_login: false,
-            },
             logging: LoggingConfig {
                 level: "info".to_string(),
                 directory: "./logs".to_string(),
