@@ -3,6 +3,13 @@ name = "tasktray-chime"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "tasktray-chime"
+path = "src/main.rs"
+
+[target.'cfg(windows)'.dependencies]
+# Windows特有の依存関係があればここに追加
+
 [dependencies]
 anyhow = "1.0.99"
 chrono = { version = "0.4.42", features = ["serde"] }

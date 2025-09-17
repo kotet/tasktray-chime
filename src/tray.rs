@@ -121,9 +121,9 @@ impl SystemTray {
             0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,     0, 0, 0, 0,
         ];
 
-        // 必要なサイズまでパディング（16x16 = 256要素必要）
-        let mut full_icon_data = Vec::with_capacity(256);
-        for i in 0..256 {
+        // 必要なサイズまでパディング（16x16 RGBA = 1024要素必要）
+        let mut full_icon_data = Vec::with_capacity(1024);
+        for i in 0..1024 {
             if i < icon_data.len() {
                 full_icon_data.push(icon_data[i]);
             } else {
@@ -134,7 +134,7 @@ impl SystemTray {
         tray_icon::Icon::from_rgba(full_icon_data, 16, 16)
             .unwrap_or_else(|_| {
                 // フォールバック: 完全に透明なアイコン
-                let transparent_data = vec![0; 64]; // 16x16 RGBA
+                let transparent_data = vec![0; 1024]; // 16x16 RGBA
                 tray_icon::Icon::from_rgba(transparent_data, 16, 16)
                     .expect("Failed to create fallback icon")
             })

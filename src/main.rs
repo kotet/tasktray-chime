@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod config;
 mod logging;
 mod audio;
@@ -25,6 +27,29 @@ async fn main() -> Result<()> {
     // ログシステムを初期化
     logging::init_logging(&config.logging)
         .context("Failed to initialize logging system")?;
+
+    // panicハンドラーを設定してpanicログもファイルに出力
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info.location().unwrap_or_else(|| {
+            std::panic::Location::caller()
+        });
+        
+        let msg = match panic_info.payload().downcast_ref::<&'static str>() {
+            Some(s) => *s,
+            None => match panic_info.payload().downcast_ref::<String>() {
+                Some(s) => &s[..],
+                None => "Box<dyn Any>",
+            }
+        };
+
+        error!("PANIC occurred at {}:{} - {}", 
+               location.file(), 
+               location.line(), 
+               msg);
+        
+        // 標準エラーにも出力
+        eprintln!("PANIC: {} at {}:{}", msg, location.file(), location.line());
+    }));
 
     info!("Starting Tasktray Chime application");
 

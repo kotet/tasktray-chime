@@ -1,6 +1,6 @@
 {
     "servers": {
-        "lsmcp": {
+        "rust-lsp": {
             "command": "npx",
             "args": [
                 "-y",
