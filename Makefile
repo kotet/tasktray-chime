@@ -9,7 +9,7 @@ BINARY_NAME := tasktray-chime
 WINDOWS_TARGET := x86_64-pc-windows-gnu
 
 # ディレクトリ
-AUDIO_DIR := audios
+AUDIO_DIR := resources/audios
 CONFIG_FILE := config.yaml
 RELEASE_DIR := release
 

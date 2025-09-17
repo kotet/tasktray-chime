@@ -41,9 +41,7 @@ $RECYCLE.BIN/
 /logs/*.log
 /release
 /sounds
-/audios/*.wav
-/audios/*.mp3
-/audios/*.flac
+resources/audios
 
 # Temporary files
 generate_test_audio
