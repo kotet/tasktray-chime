@@ -322,51 +322,106 @@ impl SystemTray {
 
     #[cfg(target_os = "windows")]
     fn set_windows_autostart_status(&self, enabled: bool) -> Result<()> {
-        use std::process::Command;
-        
         let exe_path = std::env::current_exe()
             .context("Failed to get current executable path")?;
         
+        // スタートアップフォルダのパスを取得
+        let startup_folder = Self::get_startup_folder_path()
+            .context("Failed to get startup folder path")?;
+        
+        let shortcut_path = startup_folder.join("TasktrayChime.lnk");
+        
         if enabled {
-            let output = Command::new("reg")
-                .args(&[
-                    "add",
-                    "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                    "/v", "TasktrayChime",
-                    "/t", "REG_SZ",
-                    "/d", &exe_path.to_string_lossy(),
-                    "/f"
-                ])
-                .output()
-                .context("Failed to execute reg command for adding autostart")?;
+            // ショートカットを作成
+            Self::create_shortcut(&exe_path, &shortcut_path)
+                .context("Failed to create shortcut in startup folder")?;
             
-            if !output.status.success() {
-                return Err(anyhow::anyhow!(
-                    "Failed to enable autostart: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
-            
-            tracing::info!("Autostart enabled");
+            tracing::info!("Autostart enabled - created shortcut at: {:?}", shortcut_path);
         } else {
-            let output = Command::new("reg")
-                .args(&[
-                    "delete",
-                    "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                    "/v", "TasktrayChime",
-                    "/f"
-                ])
-                .output()
-                .context("Failed to execute reg command for removing autostart")?;
-            
-            // 削除は失敗してもよい（エントリが存在しない場合）
-            if output.status.success() {
-                tracing::info!("Autostart disabled");
+            // ショートカットを削除
+            if shortcut_path.exists() {
+                std::fs::remove_file(&shortcut_path)
+                    .context("Failed to remove shortcut from startup folder")?;
+                tracing::info!("Autostart disabled - removed shortcut");
             } else {
-                tracing::info!("Autostart was not enabled");
+                tracing::info!("Autostart was not enabled - no shortcut found");
             }
         }
 
+        Ok(())
+    }
+    
+    #[cfg(target_os = "windows")]
+    fn get_startup_folder_path() -> Result<std::path::PathBuf> {
+        use std::process::Command;
+        
+        // %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup を取得
+        let output = Command::new("cmd")
+            .args(&["/C", "echo %APPDATA%"])
+            .output()
+            .context("Failed to get APPDATA environment variable")?;
+        
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to get APPDATA path: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        
+        let appdata_path = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .to_string();
+        
+        let startup_path = std::path::PathBuf::from(appdata_path)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join("Startup");
+        
+        // スタートアップフォルダが存在しない場合は作成
+        if !startup_path.exists() {
+            std::fs::create_dir_all(&startup_path)
+                .context("Failed to create startup folder")?;
+        }
+        
+        Ok(startup_path)
+    }
+    
+    #[cfg(target_os = "windows")]
+    fn create_shortcut(target_path: &std::path::Path, shortcut_path: &std::path::Path) -> Result<()> {
+        use std::process::Command;
+        
+        // PowerShellを使ってショートカットを作成
+        let powershell_script = format!(
+            r#"
+            $WshShell = New-Object -ComObject WScript.Shell
+            $Shortcut = $WshShell.CreateShortcut("{}")
+            $Shortcut.TargetPath = "{}"
+            $Shortcut.WorkingDirectory = "{}"
+            $Shortcut.Description = "Tasktray Chime - 時報アプリ"
+            $Shortcut.Save()
+            "#,
+            shortcut_path.to_string_lossy().replace('\\', "\\\\"),
+            target_path.to_string_lossy().replace('\\', "\\\\"),
+            target_path.parent()
+                .unwrap_or_else(|| std::path::Path::new(""))
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+        );
+        
+        let output = Command::new("powershell")
+            .args(&["-Command", &powershell_script])
+            .output()
+            .context("Failed to execute PowerShell command for creating shortcut")?;
+        
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to create shortcut: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        
         Ok(())
     }
 
@@ -390,18 +445,12 @@ impl SystemTray {
 
     #[cfg(target_os = "windows")]
     fn check_windows_autostart_status() -> Result<bool> {
-        use std::process::Command;
+        // スタートアップフォルダのショートカットの存在を確認
+        let startup_folder = Self::get_startup_folder_path()
+            .context("Failed to get startup folder path")?;
         
-        let output = Command::new("reg")
-            .args(&[
-                "query",
-                "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                "/v", "TasktrayChime"
-            ])
-            .output()
-            .context("Failed to query registry for autostart status")?;
-        
-        Ok(output.status.success())
+        let shortcut_path = startup_folder.join("TasktrayChime.lnk");
+        Ok(shortcut_path.exists())
     }
 
     /// 設定ファイルを開く
