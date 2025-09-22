@@ -122,13 +122,11 @@ async fn main() -> Result<()> {
 
     // メインイベントループ
     loop {
-        // Windows: メッセージポンプを実行
+        // Windows: メッセージポンプを実行（CPU負荷軽減のため1回のみ）
         #[cfg(target_os = "windows")]
         {
-            // ノンブロッキングでメッセージを処理
-            while windows_utils::pump_messages_non_blocking() {
-                // メッセージがある限り処理を継続
-            }
+            // 1回のみメッセージを処理して他のタスクに制御を譲る
+            windows_utils::pump_messages_non_blocking();
         }
 
         tokio::select! {
