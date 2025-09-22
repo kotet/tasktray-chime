@@ -49,9 +49,6 @@ brew install mingw-w64
 # 依存関係確認
 make deps
 
-# テスト音声ファイル生成
-make generate-audio
-
 # Linux向けビルド
 make build               # デバッグビルド
 make build-release       # リリースビルド
@@ -138,7 +135,6 @@ make build-windows      # Windows向けデバッグビルド
 make build-windows-release # Windows向けリリースビルド
 make test               # テスト実行
 make clean              # ビルドファイルクリーンアップ
-make generate-audio     # テスト音声ファイル生成
 make check-config       # 設定ファイルチェック
 make package-linux      # Linux向けパッケージ作成
 make package-windows    # Windows向けパッケージ作成
@@ -176,7 +172,7 @@ tasktray-chime/
 ### 音声が再生されない
 
 - オーディオデバイスが正しく設定されているか確認
-- 音声ファイルが存在するか確認: `make generate-audio`
+- 音声ファイルが存在するか確認
 - 音量設定を確認
 
 ### Windows向けビルドが失敗する
