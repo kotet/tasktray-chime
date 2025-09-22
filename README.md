@@ -69,46 +69,6 @@ make package-all       # 全プラットフォーム向け
 
 生成されたパッケージは `release/` ディレクトリに保存されます。
 
-## 設定
-
-設定ファイル `config.yaml` で動作をカスタマイズできます：
-
-```yaml
-app:
-  name: "Tasktray Chime"
-  version: "1.0.0"
-
-logging:
-  level: "info"
-  file_path: "logs/tasktray-chime.log"
-  max_file_size: "10 MB"
-  max_files: 7
-
-audio:
-  default_volume: 80
-  preload_sounds: true
-
-schedules:
-  - id: "hourly_chime"
-    name: "毎時チャイム"
-    cron: "0 0 * * * * *"  # 毎時0分0秒
-    audio_file: "audios/chime.wav"
-    volume: 80
-    enabled: true
-
-  - id: "half_hour_bell"
-    name: "30分ベル"
-    cron: "0 30 * * * * *"  # 毎時30分0秒
-    audio_file: "audios/bell.wav"
-    volume: 60
-    enabled: true
-
-behavior:
-  minimize_to_tray: true
-  start_minimized: true
-  exit_on_close: false
-```
-
 ## 使用方法
 
 ### Linux環境
