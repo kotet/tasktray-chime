@@ -353,26 +353,13 @@ impl SystemTray {
     
     #[cfg(target_os = "windows")]
     fn get_startup_folder_path() -> Result<std::path::PathBuf> {
-        use std::process::Command;
+        use directories::BaseDirs;
         
-        // %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup を取得
-        let output = Command::new("cmd")
-            .args(&["/C", "echo %APPDATA%"])
-            .output()
-            .context("Failed to get APPDATA environment variable")?;
+        // directories クレートを使用してスタートアップフォルダのパスを取得
+        let base_dirs = BaseDirs::new()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get base directories"))?;
         
-        if !output.status.success() {
-            return Err(anyhow::anyhow!(
-                "Failed to get APPDATA path: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-        
-        let appdata_path = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
-        
-        let startup_path = std::path::PathBuf::from(appdata_path)
+        let startup_path = base_dirs.data_local_dir()
             .join("Microsoft")
             .join("Windows")
             .join("Start Menu")

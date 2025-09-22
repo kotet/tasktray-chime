@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use anyhow::{Context, Result};
+use directories::ProjectDirs;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
@@ -62,10 +63,18 @@ impl Config {
 
     /// デフォルトの設定を作成
     pub fn default() -> Self {
+        // プロジェクト用ディレクトリを取得（データディレクトリ）
+        let default_log_dir = if let Some(proj_dirs) = ProjectDirs::from("com", "tasktray-chime", "tasktray-chime") {
+            proj_dirs.data_dir().join("logs").to_string_lossy().to_string()
+        } else {
+            // フォールバック: カレントディレクトリ
+            "./logs".to_string()
+        };
+
         Self {
             logging: LoggingConfig {
                 level: "info".to_string(),
-                directory: "./logs".to_string(),
+                directory: default_log_dir,
                 rotate: true,
                 max_files: 7,
             },

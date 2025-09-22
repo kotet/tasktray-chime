@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{info, error, warn};
+use directories::ProjectDirs;
 
 use config::Config;
 use audio::AudioPlayer;
@@ -39,8 +40,16 @@ mod windows_utils {
 #[tokio::main]
 async fn main() -> Result<()> {
     // 設定ファイルを読み込み（存在しない場合は作成）
-    let config_path = "config.yaml";
-    let config = Config::load_or_create_default(config_path)
+    let config_path = if let Some(proj_dirs) = ProjectDirs::from("com", "tasktray-chime", "tasktray-chime") {
+        let config_dir = proj_dirs.config_dir();
+        std::fs::create_dir_all(&config_dir).context("Failed to create config directory")?;
+        config_dir.join("config.yaml")
+    } else {
+        // フォールバック: カレントディレクトリ
+        std::path::PathBuf::from("config.yaml")
+    };
+    
+    let config = Config::load_or_create_default(&config_path)
         .context("Failed to load or create config file")?;
 
     // ログシステムを初期化
