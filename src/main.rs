@@ -19,17 +19,17 @@ use tray::{SystemTray, TrayMenuEvent};
 
 #[cfg(target_os = "windows")]
 mod windows_utils {
-    use winapi::um::winuser::{DispatchMessageW, TranslateMessage, MSG};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE
+    };
     use std::mem;
 
     pub fn pump_messages_non_blocking() -> bool {
-        use winapi::um::winuser::{PeekMessageW, PM_REMOVE};
-        
         unsafe {
             let mut msg: MSG = mem::zeroed();
-            let has_message = PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0;
+            let has_message = PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool();
             if has_message {
-                TranslateMessage(&msg);
+                let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
             has_message
