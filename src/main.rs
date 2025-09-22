@@ -154,13 +154,6 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // 定期的なメンテナンスタスク（5分毎）
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(300)) => {
-                if let Err(e) = logging::cleanup_old_logs(&config.logging) {
-                    warn!("Failed to cleanup old logs: {}", e);
-                }
-            }
-
             // 定期的なメッセージポンプとクリーンアップ（100ms毎）
             _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
                 // Windows: メッセージポンプ用のタイマー（他のタスクが実行されていない時）

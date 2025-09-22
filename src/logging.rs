@@ -2,7 +2,6 @@ use anyhow::Result;
 use tracing::Level;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
-use std::path::Path;
 use crate::config::LoggingConfig;
 
 pub fn init_logging(config: &LoggingConfig) -> Result<()> {
@@ -66,43 +65,6 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     tracing::info!("Logging initialized with level: {}", config.level);
     tracing::info!("Log directory: {}", config.directory);
     tracing::info!("Log rotation: {}", config.rotate);
-
-    Ok(())
-}
-
-/// ログディレクトリをクリーンアップ（古いファイルを削除）
-pub fn cleanup_old_logs(config: &LoggingConfig) -> Result<()> {
-    let log_dir = Path::new(&config.directory);
-    if !log_dir.exists() {
-        return Ok(());
-    }
-
-    let mut log_files: Vec<_> = std::fs::read_dir(log_dir)?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry.path().is_file() && 
-            entry.path().extension().map_or(false, |ext| ext == "log")
-        })
-        .collect();
-
-    // 更新日時でソート（新しい順）
-    log_files.sort_by_key(|entry| {
-        entry.metadata().ok()
-            .and_then(|meta| meta.modified().ok())
-            .unwrap_or_else(|| std::time::SystemTime::UNIX_EPOCH)
-    });
-    log_files.reverse();
-
-    // 保持ファイル数を超えたファイルを削除
-    if log_files.len() > config.max_files as usize {
-        for file_entry in log_files.iter().skip(config.max_files as usize) {
-            let path = file_entry.path();
-            match std::fs::remove_file(&path) {
-                Ok(()) => tracing::info!("Removed old log file: {:?}", path),
-                Err(e) => tracing::warn!("Failed to remove old log file {:?}: {}", path, e),
-            }
-        }
-    }
 
     Ok(())
 }
