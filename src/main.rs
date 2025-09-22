@@ -8,7 +8,6 @@ mod tray;
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
-use tokio::signal;
 use tracing::{info, error, warn};
 use directories::ProjectDirs;
 
@@ -20,19 +19,25 @@ use tray::{SystemTray, TrayMenuEvent};
 #[cfg(target_os = "windows")]
 mod windows_utils {
     use windows::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE
+        DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
     };
     use std::mem;
 
     pub fn pump_messages_non_blocking() -> bool {
         unsafe {
             let mut msg: MSG = mem::zeroed();
-            let has_message = PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool();
-            if has_message {
+            
+            // 複数のメッセージを一度に処理（最大10件）
+            let mut processed = 0;
+            let max_messages = 10;
+            
+            while processed < max_messages && PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
+                processed += 1;
             }
-            has_message
+            
+            processed > 0
         }
     }
 }
@@ -109,67 +114,81 @@ async fn main() -> Result<()> {
     let mut system_tray = SystemTray::new()
         .context("Failed to initialize system tray")?;
 
+    // スケジューラーを開始
+    let mut schedule_events = scheduler.start().await
+        .context("Failed to start cron scheduler")?;
+
     // 初期化後にメニューを更新して正確な自動起動状態を表示
     if let Err(e) = system_tray.update_menu() {
         warn!("Failed to update tray menu after initialization: {}", e);
     }
 
-    // スケジューラーを開始
-    let mut schedule_events = scheduler.start().await
-        .context("Failed to start cron scheduler")?;
-
-    info!("All systems initialized, entering main event loop");
-
-    // メインイベントループ
-    loop {
-        // Windows: メッセージポンプを実行（CPU負荷軽減のため1回のみ）
-        #[cfg(target_os = "windows")]
-        {
-            // 1回のみメッセージを処理して他のタスクに制御を譲る
-            windows_utils::pump_messages_non_blocking();
-        }
-
-        tokio::select! {
-            // システム終了シグナル
-            _ = signal::ctrl_c() => {
-                info!("Received shutdown signal");
-                break;
-            }
-
-            // トレイメニューイベント（高頻度チェック）
-            menu_event = system_tray.recv_menu_event() => {
-                if let Some(event) = menu_event {
-                    info!("Received tray menu event: {:?}", event);
-                    match handle_tray_event(event, &mut system_tray, &config).await {
-                        Ok(should_exit) => {
-                            if should_exit {
-                                info!("Exit requested from tray menu");
-                                break;
-                            }
-                        }
-                        Err(e) => error!("Error handling tray event: {}", e),
-                    }
-                }
-            }
-
-            // スケジュールイベント
-            schedule_event = schedule_events.recv() => {
-                if let Some(event) = schedule_event {
+    // シャットダウンチャンネル
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
+    
+    // スケジュールイベント処理用のワーカータスク
+    let shutdown_tx_clone = shutdown_tx;
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                Some(event) = schedule_events.recv() => {
                     info!("Schedule '{}' executed at {}", 
                           event.schedule_id, 
                           event.triggered_at.format("%Y-%m-%d %H:%M:%S"));
                 }
-            }
-
-            // 定期的なメッセージポンプとクリーンアップ（100ms毎）
-            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
-                // Windows: メッセージポンプ用のタイマー（他のタスクが実行されていない時）
+                
+                _ = &mut shutdown_rx => {
+                    info!("Schedule event handler received shutdown signal");
+                    break;
+                }
             }
         }
+        info!("Schedule event handler task terminated");
+    });
+
+    info!("All systems initialized, entering main event loop");
+
+    // メインイベントループ（トレイイベント処理に専念）
+    loop {
+        // Windows環境: 効率的なメッセージポンプ
+        #[cfg(target_os = "windows")]
+        {
+            windows_utils::pump_messages_non_blocking();
+        }
+
+        // トレイメニューイベントを短いタイムアウトで処理
+        if let Some(event) = system_tray.recv_menu_event_with_timeout(50).await {
+            info!("Received tray menu event: {:?}", event);
+            match handle_tray_event(event, &mut system_tray, &config).await {
+                Ok(should_exit) => {
+                    if should_exit {
+                        info!("Exit requested from tray menu");
+                        break;
+                    }
+                }
+                Err(e) => error!("Error handling tray event: {}", e),
+            }
+            continue;
+        }
+        
+        // Ctrl+C シグナルをチェック
+        if tokio::select! {
+            _ = tokio::signal::ctrl_c() => { true }
+            _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => { false }
+        } {
+            info!("Received shutdown signal");
+            break;
+        }
+        
+        // 短いスリープでCPU使用率を抑制
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     }
 
     // 終了処理
     info!("Shutting down application");
+    
+    // ワーカータスクにシャットダウンシグナルを送信
+    let _ = shutdown_tx_clone.send(());
     
     // システムトレイの終了処理
     system_tray.shutdown();
@@ -178,7 +197,7 @@ async fn main() -> Result<()> {
     scheduler.stop();
     
     // バックグラウンドタスクが終了するまで待機
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
     
     info!("Application shutdown complete");
     

@@ -191,9 +191,16 @@ impl SystemTray {
         Ok(())
     }
 
-    /// メニューイベントを受信
-    pub async fn recv_menu_event(&mut self) -> Option<TrayMenuEvent> {
-        self.menu_event_receiver.recv().await
+
+    /// メニューイベントをタイムアウト付きで受信
+    pub async fn recv_menu_event_with_timeout(&mut self, timeout_ms: u64) -> Option<TrayMenuEvent> {
+        if let Ok(event) = tokio::time::timeout(
+            tokio::time::Duration::from_millis(timeout_ms),
+            self.menu_event_receiver.recv()
+        ).await {
+            return event;
+        }
+        None
     }
     
     /// システムトレイのシャットダウン処理
