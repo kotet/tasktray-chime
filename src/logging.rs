@@ -19,6 +19,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
         _ => Level::INFO,
     };
 
+
     // ファイルアペンダーの設定
     let file_appender = if config.rotate {
         RollingFileAppender::builder()
@@ -65,30 +66,6 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     tracing::info!("Logging initialized with level: {}", config.level);
     tracing::info!("Log directory: {}", config.directory);
     tracing::info!("Log rotation: {}", config.rotate);
-
-    Ok(())
-}
-
-/// ログファイルのサイズをチェックして制限を超えた場合にローテーション
-pub fn check_log_size(config: &LoggingConfig) -> Result<()> {
-    let log_dir = Path::new(&config.directory);
-    if !log_dir.exists() {
-        return Ok(());
-    }
-
-    let max_size_bytes = config.max_size_mb * 1024 * 1024;
-
-    for entry in std::fs::read_dir(log_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        
-        if path.is_file() && path.extension().map_or(false, |ext| ext == "log") {
-            let metadata = std::fs::metadata(&path)?;
-            if metadata.len() > max_size_bytes {
-                tracing::warn!("Log file {:?} exceeds size limit, consider rotation", path);
-            }
-        }
-    }
 
     Ok(())
 }

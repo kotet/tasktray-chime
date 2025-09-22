@@ -36,7 +36,6 @@ logging:
   level: "info"
   directory: "./logs"
   rotate: true
-  max_size_mb: 50
   max_files: 7
 
 audio:

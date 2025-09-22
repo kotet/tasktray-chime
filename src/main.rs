@@ -156,9 +156,6 @@ async fn main() -> Result<()> {
 
             // 定期的なメンテナンスタスク（5分毎）
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(300)) => {
-                if let Err(e) = logging::check_log_size(&config.logging) {
-                    warn!("Failed to check log size: {}", e);
-                }
                 if let Err(e) = logging::cleanup_old_logs(&config.logging) {
                     warn!("Failed to cleanup old logs: {}", e);
                 }

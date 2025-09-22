@@ -15,7 +15,6 @@ pub struct LoggingConfig {
     pub level: String,
     pub directory: String,
     pub rotate: bool,
-    pub max_size_mb: u64,
     pub max_files: u32,
 }
 
@@ -68,7 +67,6 @@ impl Config {
                 level: "info".to_string(),
                 directory: "./logs".to_string(),
                 rotate: true,
-                max_size_mb: 50,
                 max_files: 7,
             },
             audio: AudioConfig {
