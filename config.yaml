@@ -1,0 +1,25 @@
+logging:
+  level: "info"
+  directory: "./logs"
+  rotate: true
+  max_files: 7
+
+audio:
+  global_volume: 80
+
+schedules:
+  - id: "hourly_chime"
+    type: "cron"
+    cron: "0 0 * * * *" # 毎時0分0秒（秒単位も指定）
+    file: "audios/chime.wav"
+    enabled: true
+
+  - id: "test_every_minute"
+    type: "cron"
+    cron: "0 * * * * *" # 毎分0秒（テスト用）
+    file: "audios/bell.wav"
+    enabled: false
+
+behavior:
+  retry_on_fail: 0 # 再生失敗時のリトライ回数（0でリトライなし）
+  retry_delay_seconds: 5
