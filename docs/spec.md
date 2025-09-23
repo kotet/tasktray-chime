@@ -51,10 +51,6 @@ schedules:
     enabled: true
 
 behavior:
-  retry_on_fail: 0
-  retry_delay_seconds: 5
-
-behavior:
   retry_on_fail: 0 # 再生失敗時のリトライ回数（0でリトライなし）
   retry_delay_seconds: 5
 
