@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use anyhow::{Context, Result};
-use directories::ProjectDirs;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
@@ -63,9 +62,13 @@ impl Config {
 
     /// デフォルトの設定を作成
     pub fn default() -> Self {
-        // プロジェクト用ディレクトリを取得（データディレクトリ）
-        let default_log_dir = if let Some(proj_dirs) = ProjectDirs::from("com", "tasktray-chime", "tasktray-chime") {
-            proj_dirs.data_dir().join("logs").to_string_lossy().to_string()
+        // 実行ファイルと同じディレクトリ配下のlogsディレクトリをデフォルトとする
+        let default_log_dir = if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                exe_dir.join("logs").to_string_lossy().to_string()
+            } else {
+                "./logs".to_string()
+            }
         } else {
             // フォールバック: カレントディレクトリ
             "./logs".to_string()
@@ -86,7 +89,7 @@ impl Config {
                     id: "hourly_chime".to_string(),
                     schedule_type: "cron".to_string(),
                     cron: "0 * * * *".to_string(), // 毎時0分
-                    file: "./sounds/tick.wav".to_string(),
+                    file: "./audios/chime.wav".to_string(),
                     enabled: true,
                 }
             ],

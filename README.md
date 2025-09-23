@@ -119,12 +119,39 @@ tasktray-chime/
 │   └── tray.rs           # タスクトレイUI
 ├── .devcontainer/         # Dev Container設定
 ├── audios/               # 音声ファイル（生成）
-├── config.yaml           # 設定ファイル
-├── logs/                 # ログファイル（生成）
+├── config.yaml           # 設定ファイル（実行ファイルと同じディレクトリ）
+├── logs/                 # ログファイル（実行ファイルと同じディレクトリ配下）
 ├── release/              # ビルド成果物（生成）
 ├── Cargo.toml           # Rustプロジェクト設定
 ├── Makefile             # ビルド自動化
 └── README.md            # このファイル
+```
+
+## 設定ファイルとログについて
+
+### 設定ファイル (config.yaml)
+
+- **配置場所**: 実行ファイル（tasktray-chime または tasktray-chime.exe）と同じディレクトリ
+- **作成**: 初回起動時に設定ファイルが存在しない場合、自動的にデフォルト設定ファイルが作成されます
+
+### ログファイル
+
+- **配置場所**: 実行ファイルと同じディレクトリ配下の `logs` フォルダ
+- **ファイル名**: `tasktray-chime.YYYY-MM-DD.log` (日別ローテーション)
+- **設定**: `config.yaml` の `logging` セクションで設定変更可能
+
+### 配置例
+
+```
+実行ディレクトリ/
+├── tasktray-chime.exe     # Windows実行ファイル
+├── config.yaml           # 設定ファイル
+├── audios/               # 音声ファイルフォルダ
+│   ├── chime.wav
+│   └── bell.wav
+└── logs/                 # ログフォルダ（自動作成）
+    ├── tasktray-chime.2025-01-01.log
+    └── tasktray-chime.2025-01-02.log
 ```
 
 ## トラブルシューティング
