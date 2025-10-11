@@ -3,7 +3,7 @@ use chrono::{DateTime, Local, Utc};
 use cron::Schedule as CronSchedule;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::time::Duration;
 use crate::config::Schedule;
@@ -21,6 +21,7 @@ pub struct CronScheduler {
     event_sender: Option<mpsc::UnboundedSender<ScheduleEvent>>,
     shutdown_sender: Option<tokio::sync::oneshot::Sender<()>>,
     start_time: DateTime<Local>,
+    last_executed: Arc<Mutex<HashMap<String, DateTime<Local>>>>,
 }
 
 impl CronScheduler {
@@ -31,6 +32,7 @@ impl CronScheduler {
             event_sender: None,
             shutdown_sender: None,
             start_time: Local::now(),
+            last_executed: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -56,6 +58,7 @@ impl CronScheduler {
         let schedules = self.schedules.clone();
         let audio_player = self.audio_player.clone();
         let start_time = self.start_time;
+        let last_executed = self.last_executed.clone();
 
         tokio::spawn(async move {
             tracing::info!("Cron scheduler started with {} schedules", schedules.len());
@@ -66,7 +69,7 @@ impl CronScheduler {
                         tracing::info!("Cron scheduler shutdown requested");
                         break;
                     }
-                    _ = Self::run_scheduler_cycle(&schedules, &audio_player, &event_tx, start_time) => {
+                    _ = Self::run_scheduler_cycle(&schedules, &audio_player, &event_tx, start_time, &last_executed) => {
                         // スケジューラーサイクル完了後、短い間隔で再チェック
                         tokio::time::sleep(Duration::from_millis(100)).await;
                     }
@@ -93,6 +96,7 @@ impl CronScheduler {
         audio_player: &Arc<AudioPlayer>,
         event_tx: &mpsc::UnboundedSender<ScheduleEvent>,
         start_time: DateTime<Local>,
+        last_executed: &Arc<Mutex<HashMap<String, DateTime<Local>>>>,
     ) {
         let now = Local::now();
         
@@ -119,14 +123,34 @@ impl CronScheduler {
                     
                     // 次回実行時間が現在時刻から5秒以内なら実行対象とする
                     if time_diff.num_seconds() <= 5 && time_diff.num_seconds() >= -5 {
-                        tracing::info!(
-                            "Schedule '{}' ready for execution at {} (cron: {}), time diff: {} seconds",
-                            schedule.id,
-                            next_time.format("%Y-%m-%d %H:%M:%S"),
-                            schedule.cron,
-                            time_diff.num_seconds()
-                        );
-                        schedules_to_execute.push(schedule.clone());
+                        // 最後に実行した時刻をチェック（重複実行を防ぐ）
+                        let should_execute = {
+                            let last_exec_map = last_executed.lock().unwrap();
+                            if let Some(last_time) = last_exec_map.get(&schedule.id) {
+                                // 最後の実行から30秒以上経過している場合のみ実行
+                                let elapsed = now.signed_duration_since(*last_time);
+                                elapsed.num_seconds() >= 30
+                            } else {
+                                // 初回実行
+                                true
+                            }
+                        };
+                        
+                        if should_execute {
+                            tracing::info!(
+                                "Schedule '{}' ready for execution at {} (cron: {}), time diff: {} seconds",
+                                schedule.id,
+                                next_time.format("%Y-%m-%d %H:%M:%S"),
+                                schedule.cron,
+                                time_diff.num_seconds()
+                            );
+                            schedules_to_execute.push(schedule.clone());
+                        } else {
+                            tracing::debug!(
+                                "Skipping duplicate execution of schedule '{}' (already executed recently)",
+                                schedule.id
+                            );
+                        }
                     }
 
                     // 次回実行時間を更新
@@ -148,6 +172,13 @@ impl CronScheduler {
         // 実行対象のスケジュールを実行
         for schedule in schedules_to_execute {
             let now_exec = Local::now();
+            
+            // 最後の実行時刻を記録
+            {
+                let mut last_exec_map = last_executed.lock().unwrap();
+                last_exec_map.insert(schedule.id.clone(), now_exec);
+            }
+            
             tracing::info!(
                 "Executing schedule '{}' at {} (cron: {})",
                 schedule.id,
