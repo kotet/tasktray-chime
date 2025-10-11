@@ -125,7 +125,7 @@ impl CronScheduler {
                     if time_diff.num_seconds() <= 5 && time_diff.num_seconds() >= -5 {
                         // 最後に実行した時刻をチェック（重複実行を防ぐ）
                         let should_execute = {
-                            let last_exec_map = last_executed.lock().unwrap();
+                            let last_exec_map = last_executed.lock().unwrap_or_else(|e| e.into_inner());
                             if let Some(last_time) = last_exec_map.get(&schedule.id) {
                                 // 最後の実行から30秒以上経過している場合のみ実行
                                 let elapsed = now.signed_duration_since(*last_time);
@@ -175,7 +175,7 @@ impl CronScheduler {
             
             // 最後の実行時刻を記録
             {
-                let mut last_exec_map = last_executed.lock().unwrap();
+                let mut last_exec_map = last_executed.lock().unwrap_or_else(|e| e.into_inner());
                 last_exec_map.insert(schedule.id.clone(), now_exec);
             }
             
