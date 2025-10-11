@@ -9,6 +9,14 @@ use tokio::time::Duration;
 use crate::config::Schedule;
 use crate::audio::AudioPlayer;
 
+/// スケジュール実行判定の時間枠（秒）
+/// この時間内に次回実行時刻がある場合、実行対象とする
+const SCHEDULE_EXECUTION_THRESHOLD_SECONDS: i64 = 5;
+
+/// 重複実行を防止するための最小待機時間（秒）
+/// 前回実行からこの時間が経過していない場合は実行をスキップ
+const DUPLICATE_PREVENTION_INTERVAL_SECONDS: i64 = 30;
+
 #[derive(Debug, Clone)]
 pub struct ScheduleEvent {
     pub schedule_id: String,
@@ -121,15 +129,18 @@ impl CronScheduler {
                     // 実行すべきスケジュールかどうかチェック（1分の余裕を持って判定）
                     let time_diff = next_time.signed_duration_since(now);
                     
-                    // 次回実行時間が現在時刻から5秒以内なら実行対象とする
-                    if time_diff.num_seconds() <= 5 && time_diff.num_seconds() >= -5 {
+                    // 次回実行時間が現在時刻から指定秒数以内なら実行対象とする
+                    if time_diff.num_seconds() <= SCHEDULE_EXECUTION_THRESHOLD_SECONDS && time_diff.num_seconds() >= -SCHEDULE_EXECUTION_THRESHOLD_SECONDS {
                         // 最後に実行した時刻をチェック（重複実行を防ぐ）
                         let should_execute = {
-                            let last_exec_map = last_executed.lock().unwrap_or_else(|e| e.into_inner());
+                            let last_exec_map = last_executed.lock().unwrap_or_else(|e| {
+                                tracing::warn!("Mutex poisoned while checking last execution time - recovering by using poisoned data. A panic may have occurred in another thread.");
+                                e.into_inner()
+                            });
                             if let Some(last_time) = last_exec_map.get(&schedule.id) {
-                                // 最後の実行から30秒以上経過している場合のみ実行
+                                // 最後の実行から指定秒数以上経過している場合のみ実行
                                 let elapsed = now.signed_duration_since(*last_time);
-                                elapsed.num_seconds() >= 30
+                                elapsed.num_seconds() >= DUPLICATE_PREVENTION_INTERVAL_SECONDS
                             } else {
                                 // 初回実行
                                 true
@@ -175,7 +186,10 @@ impl CronScheduler {
             
             // 最後の実行時刻を記録
             {
-                let mut last_exec_map = last_executed.lock().unwrap_or_else(|e| e.into_inner());
+                let mut last_exec_map = last_executed.lock().unwrap_or_else(|e| {
+                    tracing::warn!("Mutex poisoned while recording execution time - recovering by using poisoned data. A panic may have occurred in another thread.");
+                    e.into_inner()
+                });
                 last_exec_map.insert(schedule.id.clone(), now_exec);
             }
             
