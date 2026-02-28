@@ -3,11 +3,13 @@ use rodio::{Decoder, OutputStreamBuilder, Sink};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 use crate::config::AudioConfig;
 
 pub struct AudioPlayer {
     preloaded_sounds: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     global_volume: Arc<Mutex<f32>>,
+    playback_lock: TokioMutex<()>,
 }
 
 impl AudioPlayer {
@@ -22,6 +24,7 @@ impl AudioPlayer {
         Ok(Self {
             preloaded_sounds: Arc::new(Mutex::new(HashMap::new())),
             global_volume: Arc::new(Mutex::new(global_volume)),
+            playback_lock: TokioMutex::new(()),
         })
     }
 
@@ -55,6 +58,9 @@ impl AudioPlayer {
         let path_str = path.to_string_lossy().to_string();
 
         tracing::debug!("Attempting to play sound: {:?}", path);
+
+        // 同時再生を防ぐためロックを取得（再生完了まで保持）
+        let _guard = self.playback_lock.lock().await;
 
         // 事前ロードされた音声データを取得
         let audio_data = {
