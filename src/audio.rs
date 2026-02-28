@@ -1,28 +1,30 @@
 use anyhow::{Context, Result};
-use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink};
+use rodio::{Decoder, OutputStreamBuilder, Sink};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 use crate::config::AudioConfig;
 
 pub struct AudioPlayer {
-    _stream: Arc<OutputStream>,
     preloaded_sounds: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     global_volume: Arc<Mutex<f32>>,
+    playback_lock: TokioMutex<()>,
 }
 
 impl AudioPlayer {
     pub fn new(config: &AudioConfig) -> Result<Self> {
         let global_volume = (config.global_volume as f32) / 100.0;
 
-        // OutputStreamBuilder を使用
-        let stream = OutputStreamBuilder::open_default_stream()
+        // 起動時にデフォルトストリームが開けることを確認（初期検証のみ）
+        let _stream = OutputStreamBuilder::open_default_stream()
             .map_err(|e| anyhow::anyhow!("Failed to open default audio stream: {}", e))?;
+        drop(_stream);
 
         Ok(Self {
-            _stream: Arc::new(stream),
             preloaded_sounds: Arc::new(Mutex::new(HashMap::new())),
             global_volume: Arc::new(Mutex::new(global_volume)),
+            playback_lock: TokioMutex::new(()),
         })
     }
 
@@ -57,6 +59,9 @@ impl AudioPlayer {
 
         tracing::debug!("Attempting to play sound: {:?}", path);
 
+        // 同時再生を防ぐためロックを取得（再生完了まで保持）
+        let _guard = self.playback_lock.lock().await;
+
         // 事前ロードされた音声データを取得
         let audio_data = {
             let preloaded = self.preloaded_sounds.lock().unwrap();
@@ -76,13 +81,14 @@ impl AudioPlayer {
         // 非同期タスクで再生実行
         let global_volume = *self.global_volume.lock().unwrap();
         let path_for_log = path_str.clone();
-        let stream_ref = self._stream.clone();
 
         tokio::task::spawn_blocking(move || -> Result<()> {
             tracing::debug!("Starting audio playback task for: {}", path_for_log);
             
-            // 既存のストリームを使用
-            let sink = Sink::connect_new(&stream_ref.mixer());
+            // 毎回デフォルトストリームを取得（デバイス変更に追従するため）
+            let stream = OutputStreamBuilder::open_default_stream()
+                .map_err(|e| anyhow::anyhow!("Failed to open audio stream for playback: {}", e))?;
+            let sink = Sink::connect_new(&stream.mixer());
             
             // デコーダーを作成
             let cursor = std::io::Cursor::new(audio_data);

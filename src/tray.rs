@@ -449,16 +449,12 @@ impl SystemTray {
 
     /// 設定ファイルを開く
     pub fn open_config_file() -> Result<()> {
-        let config_path = Path::new("config.yaml");
-        
-        // 絶対パスに変換
-        let absolute_path = config_path.canonicalize()
-            .or_else(|_| {
-                // canonicalize が失敗した場合（まだ存在しないファイル等）、手動で絶対パス化
-                std::env::current_dir()
-                    .map(|cwd| cwd.join(config_path))
-                    .context("Failed to get current directory")
-            })?;
+        // main.rs と同じく実行ファイルのディレクトリ基準で解決
+        let absolute_path = std::env::current_exe()
+            .context("Failed to get executable path")?
+            .parent()
+            .context("Failed to get executable directory")?
+            .join("config.yaml");
         
         #[cfg(target_os = "windows")]
         {
